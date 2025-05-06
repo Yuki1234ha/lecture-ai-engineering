@@ -4,30 +4,51 @@ import torch
 from transformers import pipeline
 import streamlit as st
 import time
-from config import MODEL_NAME
+from config import MODEL_NAME, AVAILABLE_MODELS
 from huggingface_hub import login
 
+# モデル名をセッションステートで管理
+if 'model_name' not in st.session_state:
+    st.session_state['model_name'] = MODEL_NAME
+
+def set_model_name(model_name):
+    st.session_state['model_name'] = model_name
+
+def get_model_name():
+    return st.session_state['model_name']
+
+# サイドバーでモデルを選択
+selected_model = st.sidebar.selectbox(
+    "使用するモデルを選択",
+    AVAILABLE_MODELS,
+    index=AVAILABLE_MODELS.index(get_model_name()),
+    on_change=lambda: set_model_name(st.session_state.selectbox)
+)
+
 # モデルをキャッシュして再利用
-@st.cache_resource
+@st.cache_resource(show_spinner=False)
 def load_model():
     """LLMモデルをロードする"""
+    model_name = get_model_name()
+    st.info(f"モデル '{model_name}' をロード中です...")
     try:
+        # アクセストークンを保存 (config.pyから移動)
+        hf_token = st.secrets.get("huggingface", {}).get("token")
+        if hf_token:
+            login(token=hf_token, add_to_git_credential=True)
 
-        # アクセストークンを保存
-        hf_token = st.secrets["huggingface"]["token"]
-        
         device = "cuda" if torch.cuda.is_available() else "cpu"
         st.info(f"Using device: {device}") # 使用デバイスを表示
         pipe = pipeline(
             "text-generation",
-            model=MODEL_NAME,
-            model_kwargs={"torch_dtype": torch.bfloat16},
+            model=model_name,
+            model_kwargs={"torch_dtype": torch.bfloat16} if device == "cuda" else {},
             device=device
         )
-        st.success(f"モデル '{MODEL_NAME}' の読み込みに成功しました。")
+        st.success(f"モデル '{model_name}' の読み込みに成功しました。")
         return pipe
     except Exception as e:
-        st.error(f"モデル '{MODEL_NAME}' の読み込みに失敗しました: {e}")
+        st.error(f"モデル '{model_name}' の読み込みに失敗しました: {e}")
         st.error("GPUメモリ不足の可能性があります。不要なプロセスを終了するか、より小さいモデルの使用を検討してください。")
         return None
 
